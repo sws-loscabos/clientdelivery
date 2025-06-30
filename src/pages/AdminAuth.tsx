@@ -97,44 +97,73 @@ const AdminAuth = () => {
       if (data.user) {
         console.log('✅ Login successful, checking admin role...');
         
-        // Check if user has admin role
-        const { data: userProfile, error: profileError } = await supabase
+        // Add timeout to profile check
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Profile check timeout')), 5000);
+        });
+
+        const profilePromise = supabase
           .from('profiles')
           .select('role, full_name')
           .eq('id', data.user.id)
           .single();
 
-        if (profileError) {
-          console.error('❌ Error fetching profile:', profileError);
+        try {
+          const { data: userProfile, error: profileError } = await Promise.race([
+            profilePromise,
+            timeoutPromise
+          ]);
+
+          if (profileError) {
+            console.error('❌ Error fetching profile:', profileError);
+            
+            // If profile doesn't exist, this user shouldn't be logging in as admin
+            if (profileError.code === 'PGRST116') {
+              toast({
+                title: 'Access Denied',
+                description: 'No admin profile found. Please contact your administrator.',
+                variant: 'destructive',
+              });
+            } else {
+              toast({
+                title: 'Access Denied',
+                description: 'Unable to verify admin privileges. Please try again.',
+                variant: 'destructive',
+              });
+            }
+            await supabase.auth.signOut();
+            return;
+          }
+
+          console.log('👤 User profile:', userProfile);
+
+          if (userProfile?.role !== 'admin') {
+            console.log('❌ User is not admin, role:', userProfile?.role);
+            toast({
+              title: 'Access Denied',
+              description: 'You do not have admin privileges. This area is restricted to administrators only.',
+              variant: 'destructive',
+            });
+            await supabase.auth.signOut();
+            return;
+          }
+
+          console.log('✅ Admin login successful');
           toast({
-            title: 'Access Denied',
-            description: 'Unable to verify admin privileges. Please try again.',
+            title: 'Admin Login Successful',
+            description: `Welcome back, ${userProfile.full_name || 'Admin'}!`,
+          });
+          
+          // AuthProvider will handle navigation to /admin
+        } catch (timeoutError) {
+          console.error('⏰ Profile check timed out:', timeoutError);
+          toast({
+            title: 'Login Timeout',
+            description: 'Profile verification timed out. Please try again.',
             variant: 'destructive',
           });
           await supabase.auth.signOut();
-          return;
         }
-
-        console.log('👤 User profile:', userProfile);
-
-        if (userProfile?.role !== 'admin') {
-          console.log('❌ User is not admin, role:', userProfile?.role);
-          toast({
-            title: 'Access Denied',
-            description: 'You do not have admin privileges. This area is restricted to administrators only.',
-            variant: 'destructive',
-          });
-          await supabase.auth.signOut();
-          return;
-        }
-
-        console.log('✅ Admin login successful');
-        toast({
-          title: 'Admin Login Successful',
-          description: `Welcome back, ${userProfile.full_name || 'Admin'}!`,
-        });
-        
-        // AuthProvider will handle navigation to /admin
       }
     } catch (error) {
       console.error('❌ Unexpected admin login error:', error);

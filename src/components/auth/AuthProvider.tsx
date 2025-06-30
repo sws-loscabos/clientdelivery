@@ -30,23 +30,82 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
-      console.log(`Fetching profile for user ${userId}`);
+      console.log(`👤 Fetching profile for user ${userId}...`);
       
-      const { data: userProfile, error } = await supabase
+      // Add a timeout to the profile fetch
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 5000);
+      });
+
+      const profilePromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
+      const { data: userProfile, error } = await Promise.race([
+        profilePromise,
+        timeoutPromise
+      ]);
+
       if (error) {
-        console.error('Error fetching profile:', error);
+        console.error('❌ Error fetching profile:', error);
+        
+        // If profile doesn't exist, create a default one
+        if (error.code === 'PGRST116') {
+          console.log('📝 Profile not found, creating default profile...');
+          
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([{
+              id: userId,
+              full_name: user?.email || 'User',
+              role: 'client'
+            }])
+            .select()
+            .single();
+
+          if (createError) {
+            console.error('❌ Error creating profile:', createError);
+            return null;
+          }
+
+          console.log('✅ Default profile created:', newProfile);
+          return newProfile as Profile;
+        }
+        
         return null;
       }
 
-      console.log('Profile fetched successfully:', userProfile);
+      console.log('✅ Profile fetched successfully:', userProfile);
       return userProfile as Profile;
     } catch (error) {
-      console.error('Error in fetchProfile:', error);
+      console.error('❌ Error in fetchProfile:', error);
+      
+      // If it's a timeout, try to create a default profile
+      if (error.message === 'Profile fetch timeout') {
+        console.log('⏰ Profile fetch timed out, creating default profile...');
+        
+        try {
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([{
+              id: userId,
+              full_name: user?.email || 'User',
+              role: 'client'
+            }])
+            .select()
+            .single();
+
+          if (!createError && newProfile) {
+            console.log('✅ Default profile created after timeout:', newProfile);
+            return newProfile as Profile;
+          }
+        } catch (createErr) {
+          console.error('❌ Failed to create default profile:', createErr);
+        }
+      }
+      
       return null;
     }
   };
@@ -60,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
-      console.log('Signing out...');
+      console.log('🚪 Signing out...');
       setLoading(true);
       await supabase.auth.signOut();
       setProfile(null);
@@ -68,7 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(null);
       navigate('/');
     } catch (error) {
-      console.error('Error signing out:', error);
+      console.error('❌ Error signing out:', error);
     } finally {
       setLoading(false);
     }
@@ -112,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(initialSession);
           setUser(initialSession.user);
           
-          // Fetch profile
+          // Fetch profile with timeout
           console.log('👤 Fetching user profile...');
           const userProfile = await fetchProfile(initialSession.user.id);
           if (isMounted) {
@@ -154,7 +213,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        // Fetch profile for authenticated user
+        // Fetch profile for authenticated user with timeout
+        console.log('👤 Fetching profile after auth state change...');
         const userProfile = await fetchProfile(session.user.id);
         if (isMounted) {
           setProfile(userProfile);
@@ -164,8 +224,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const currentPath = window.location.pathname;
             
             if (userProfile.role === 'admin' && !currentPath.startsWith('/admin')) {
+              console.log('🔀 Redirecting admin to /admin');
               navigate('/admin');
             } else if (userProfile.role === 'client' && !currentPath.startsWith('/client')) {
+              console.log('🔀 Redirecting client to /client');
               navigate('/client');
             }
           }
@@ -174,6 +236,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isMounted) {
           setProfile(null);
         }
+      }
+      
+      // Set loading to false after handling auth state change
+      if (isMounted) {
+        setLoading(false);
       }
     });
 
