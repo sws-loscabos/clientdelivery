@@ -28,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const fetchProfile = async (userId: string, retryCount = 0) => {
+  const fetchProfile = async (userId: string, retryCount = 0): Promise<Profile | null> => {
     try {
       console.log(`Fetching profile for user ${userId}, attempt ${retryCount + 1}`);
       
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Error fetching profile:', error);
         
         // If profile doesn't exist and this is a new signup, wait and retry
-        if (error.code === 'PGRST116' && retryCount < 3) {
+        if (error.code === 'PGRST116' && retryCount < 2) {
           console.log('Profile not found, retrying in 1 second...');
           await new Promise(resolve => setTimeout(resolve, 1000));
           return fetchProfile(userId, retryCount + 1);
@@ -66,87 +66,102 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const handleAuthStateChange = async (event: string, session: Session | null) => {
+    console.log('Auth state changed:', event, session?.user?.email);
+    
+    setSession(session);
+    setUser(session?.user ?? null);
+    
+    if (session?.user) {
+      // For new signups, wait a bit for the trigger to create the profile
+      if (event === 'SIGNED_UP') {
+        console.log('New signup detected, waiting for profile creation...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      const userProfile = await fetchProfile(session.user.id);
+      setProfile(userProfile);
+      
+      // Only navigate on successful login/signup, not on initial load
+      if (userProfile && (event === 'SIGNED_IN' || event === 'SIGNED_UP')) {
+        const currentPath = window.location.pathname;
+        
+        // Don't redirect if already on the correct dashboard
+        if (userProfile.role === 'admin' && !currentPath.startsWith('/admin')) {
+          navigate('/admin');
+        } else if (userProfile.role === 'client' && !currentPath.startsWith('/client')) {
+          navigate('/client');
+        }
+      }
+    } else {
+      setProfile(null);
+    }
+    
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const getSessionAndProfile = async () => {
+    let mounted = true;
+
+    const getInitialSession = async () => {
       try {
         console.log('Getting initial session...');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
           console.error('Session error:', sessionError);
-          setLoading(false);
+          if (mounted) setLoading(false);
           return;
         }
 
-        if (session?.user) {
-          console.log('Session found, user:', session.user.email);
+        if (session?.user && mounted) {
+          console.log('Initial session found, user:', session.user.email);
           setSession(session);
           setUser(session.user);
           
           // Fetch user profile
           const userProfile = await fetchProfile(session.user.id);
-          setProfile(userProfile);
-          
-          // Navigate based on role
-          if (userProfile) {
+          if (mounted) {
+            setProfile(userProfile);
+            
+            // Handle initial navigation based on current path and role
             const currentPath = window.location.pathname;
-            if (currentPath === '/auth' || currentPath === '/') {
-              if (userProfile.role === 'admin') {
-                navigate('/admin');
-              } else {
-                navigate('/client');
+            if (userProfile) {
+              // If on auth pages and user is authenticated, redirect to dashboard
+              if (currentPath === '/auth' || currentPath === '/admin/auth' || currentPath === '/') {
+                if (userProfile.role === 'admin') {
+                  navigate('/admin');
+                } else {
+                  navigate('/client');
+                }
               }
             }
           }
         } else {
-          console.log('No session found');
+          console.log('No initial session found');
         }
       } catch (error) {
-        console.error('Error getting session:', error);
+        console.error('Error getting initial session:', error);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
-    getSessionAndProfile();
+    getInitialSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email);
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        // Wait a bit for the trigger to create the profile for new signups
-        if (event === 'SIGNED_UP') {
-          console.log('New signup detected, waiting for profile creation...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
-        const userProfile = await fetchProfile(session.user.id);
-        setProfile(userProfile);
-        
-        // Navigate based on role after successful auth
-        if (userProfile && (event === 'SIGNED_IN' || event === 'SIGNED_UP')) {
-          if (userProfile.role === 'admin') {
-            navigate('/admin');
-          } else {
-            navigate('/client');
-          }
-        }
-      } else {
-        setProfile(null);
-      }
-      
-      setLoading(false);
-    });
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthStateChange);
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   const signOut = async () => {
     try {
       console.log('Signing out...');
+      setLoading(true);
       await supabase.auth.signOut();
       setProfile(null);
       setUser(null);
@@ -154,6 +169,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       navigate('/');
     } catch (error) {
       console.error('Error signing out:', error);
+    } finally {
+      setLoading(false);
     }
   };
 

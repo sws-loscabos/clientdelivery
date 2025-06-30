@@ -7,27 +7,32 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { Shield, Lock } from 'lucide-react';
+import { Shield, Lock, AlertCircle } from 'lucide-react';
 
 const AdminAuth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Redirect if already authenticated as admin
   useEffect(() => {
-    if (user && profile) {
+    if (!authLoading && user && profile) {
       if (profile.role === 'admin') {
         navigate('/admin');
       } else {
-        // If user is logged in but not admin, redirect to client portal
-        navigate('/client');
+        // If user is logged in but not admin, show error and sign out
+        toast({
+          title: 'Access Denied',
+          description: 'You do not have admin privileges. Please contact your administrator.',
+          variant: 'destructive',
+        });
+        supabase.auth.signOut();
       }
     }
-  }, [user, profile, navigate]);
+  }, [user, profile, authLoading, navigate, toast]);
 
   const validateForm = () => {
     if (!email || !password) {
@@ -59,6 +64,8 @@ const AdminAuth = () => {
     setLoading(true);
     
     try {
+      console.log('Attempting admin login for:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -75,10 +82,12 @@ const AdminAuth = () => {
       }
 
       if (data.user) {
+        console.log('Login successful, checking admin role...');
+        
         // Check if user has admin role
         const { data: userProfile, error: profileError } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, full_name')
           .eq('id', data.user.id)
           .single();
 
@@ -86,29 +95,33 @@ const AdminAuth = () => {
           console.error('Error fetching profile:', profileError);
           toast({
             title: 'Access Denied',
-            description: 'Unable to verify admin privileges.',
+            description: 'Unable to verify admin privileges. Please try again.',
             variant: 'destructive',
           });
           await supabase.auth.signOut();
           return;
         }
+
+        console.log('User profile:', userProfile);
 
         if (userProfile?.role !== 'admin') {
+          console.log('User is not admin, role:', userProfile?.role);
           toast({
             title: 'Access Denied',
-            description: 'You do not have admin privileges.',
+            description: 'You do not have admin privileges. This area is restricted to administrators only.',
             variant: 'destructive',
           });
           await supabase.auth.signOut();
           return;
         }
 
+        console.log('Admin login successful');
         toast({
           title: 'Admin Login Successful',
-          description: 'Welcome to the admin dashboard!',
+          description: `Welcome back, ${userProfile.full_name || 'Admin'}!`,
         });
         
-        // Navigation will be handled by AuthProvider
+        // AuthProvider will handle navigation to /admin
       }
     } catch (error) {
       console.error('Unexpected admin login error:', error);
@@ -121,6 +134,20 @@ const AdminAuth = () => {
       setLoading(false);
     }
   };
+
+  // Show loading state while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-blue-900">
+        <Card className="w-full max-w-md mx-4 border-slate-200 shadow-2xl">
+          <CardContent className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600">Checking authentication...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-blue-900">
@@ -137,6 +164,16 @@ const AdminAuth = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-amber-800">
+                <p className="font-medium">Admin Access Only</p>
+                <p>Only users with admin privileges can access this area. Contact your administrator if you need access.</p>
+              </div>
+            </div>
+          </div>
+
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="admin-email" className="text-slate-700 font-medium">
@@ -178,7 +215,7 @@ const AdminAuth = () => {
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Signing in...
+                  Verifying credentials...
                 </>
               ) : (
                 <>
@@ -195,6 +232,7 @@ const AdminAuth = () => {
               <button
                 onClick={() => navigate('/auth')}
                 className="text-blue-600 hover:text-blue-700 font-medium"
+                disabled={loading}
               >
                 Client Login
               </button>
