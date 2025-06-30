@@ -28,8 +28,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, retryCount = 0) => {
     try {
+      console.log(`Fetching profile for user ${userId}, attempt ${retryCount + 1}`);
+      
       const { data: userProfile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -38,9 +40,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('Error fetching profile:', error);
+        
+        // If profile doesn't exist and this is a new signup, wait and retry
+        if (error.code === 'PGRST116' && retryCount < 3) {
+          console.log('Profile not found, retrying in 1 second...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return fetchProfile(userId, retryCount + 1);
+        }
+        
         return null;
       }
 
+      console.log('Profile fetched successfully:', userProfile);
       return userProfile as Profile;
     } catch (error) {
       console.error('Error in fetchProfile:', error);
@@ -58,6 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const getSessionAndProfile = async () => {
       try {
+        console.log('Getting initial session...');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
@@ -67,12 +79,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (session?.user) {
+          console.log('Session found, user:', session.user.email);
           setSession(session);
           setUser(session.user);
           
           // Fetch user profile
           const userProfile = await fetchProfile(session.user.id);
           setProfile(userProfile);
+          
+          // Navigate based on role
+          if (userProfile) {
+            const currentPath = window.location.pathname;
+            if (currentPath === '/auth' || currentPath === '/') {
+              if (userProfile.role === 'admin') {
+                navigate('/admin');
+              } else {
+                navigate('/client');
+              }
+            }
+          }
+        } else {
+          console.log('No session found');
         }
       } catch (error) {
         console.error('Error getting session:', error);
@@ -90,13 +117,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        // Wait a bit for the trigger to create the profile
+        // Wait a bit for the trigger to create the profile for new signups
         if (event === 'SIGNED_UP') {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.log('New signup detected, waiting for profile creation...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
         
         const userProfile = await fetchProfile(session.user.id);
         setProfile(userProfile);
+        
+        // Navigate based on role after successful auth
+        if (userProfile && (event === 'SIGNED_IN' || event === 'SIGNED_UP')) {
+          if (userProfile.role === 'admin') {
+            navigate('/admin');
+          } else {
+            navigate('/client');
+          }
+        }
       } else {
         setProfile(null);
       }
@@ -105,10 +142,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
   const signOut = async () => {
     try {
+      console.log('Signing out...');
       await supabase.auth.signOut();
       setProfile(null);
       setUser(null);

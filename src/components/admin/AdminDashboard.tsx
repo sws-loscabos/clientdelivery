@@ -1,69 +1,116 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Users, FileText, Plus } from 'lucide-react';
+import { Upload, Users, FileText, Plus, AlertCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 import ProjectUpload from './ProjectUpload';
 import ClientManagement from './ClientManagement';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = React.useState('overview');
+  const { user, profile, loading: authLoading } = useAuth();
 
-  // Fetch dashboard stats
-  const { data: dashboardStats, isLoading: statsLoading } = useQuery({
+  // Debug: Log current auth state
+  React.useEffect(() => {
+    console.log('AdminDashboard - Auth state:', { user: !!user, profile, authLoading });
+  }, [user, profile, authLoading]);
+
+  // Fetch dashboard stats with better error handling
+  const { data: dashboardStats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      const [clientsResult, projectsResult] = await Promise.all([
-        supabase.from('clients').select('id', { count: 'exact' }),
-        supabase.from('projects').select('id, status', { count: 'exact' })
-      ]);
+      console.log('Fetching dashboard stats...');
+      
+      try {
+        const [clientsResult, projectsResult] = await Promise.all([
+          supabase.from('clients').select('id', { count: 'exact' }),
+          supabase.from('projects').select('id, status', { count: 'exact' })
+        ]);
 
-      if (clientsResult.error) throw clientsResult.error;
-      if (projectsResult.error) throw projectsResult.error;
+        console.log('Clients result:', clientsResult);
+        console.log('Projects result:', projectsResult);
 
-      const totalClients = clientsResult.count || 0;
-      const totalProjects = projectsResult.count || 0;
-      const activeProjects = projectsResult.data?.filter(p => p.status !== 'Completed').length || 0;
-      const completedProjects = projectsResult.data?.filter(p => p.status === 'Completed').length || 0;
+        if (clientsResult.error) {
+          console.error('Clients query error:', clientsResult.error);
+          throw clientsResult.error;
+        }
+        if (projectsResult.error) {
+          console.error('Projects query error:', projectsResult.error);
+          throw projectsResult.error;
+        }
 
-      return {
-        totalClients,
-        totalProjects,
-        activeProjects,
-        completedProjects,
-        pendingReviews: projectsResult.data?.filter(p => p.status === 'Review').length || 0
-      };
+        const totalClients = clientsResult.count || 0;
+        const totalProjects = projectsResult.count || 0;
+        const activeProjects = projectsResult.data?.filter(p => p.status !== 'Completed').length || 0;
+        const completedProjects = projectsResult.data?.filter(p => p.status === 'Completed').length || 0;
+
+        const stats = {
+          totalClients,
+          totalProjects,
+          activeProjects,
+          completedProjects,
+          pendingReviews: projectsResult.data?.filter(p => p.status === 'Review').length || 0
+        };
+
+        console.log('Dashboard stats:', stats);
+        return stats;
+      } catch (error) {
+        console.error('Error in dashboard stats query:', error);
+        throw error;
+      }
     },
+    enabled: !!user && !!profile && profile.role === 'admin',
+    retry: 3,
+    retryDelay: 1000,
   });
 
-  // Fetch recent projects
-  const { data: recentProjects = [], isLoading: projectsLoading } = useQuery({
+  // Fetch recent projects with better error handling
+  const { data: recentProjects = [], isLoading: projectsLoading, error: projectsError } = useQuery({
     queryKey: ['recent-projects'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select(`
-          id,
-          name,
-          status,
-          created_at,
-          clients(name)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      console.log('Fetching recent projects...');
+      
+      try {
+        const { data, error } = await supabase
+          .from('projects')
+          .select(`
+            id,
+            name,
+            status,
+            created_at,
+            clients(name)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-      if (error) throw error;
-      return data.map(project => ({
-        id: project.id,
-        name: project.name,
-        client: project.clients?.name || 'Unknown Client',
-        status: project.status || 'In Progress',
-        lastUpdate: formatDate(project.created_at)
-      }));
+        console.log('Recent projects result:', { data, error });
+
+        if (error) {
+          console.error('Recent projects query error:', error);
+          throw error;
+        }
+
+        const formattedProjects = (data || []).map(project => ({
+          id: project.id,
+          name: project.name,
+          client: project.clients?.name || 'Unknown Client',
+          status: project.status || 'In Progress',
+          lastUpdate: formatDate(project.created_at)
+        }));
+
+        console.log('Formatted projects:', formattedProjects);
+        return formattedProjects;
+      } catch (error) {
+        console.error('Error in recent projects query:', error);
+        throw error;
+      }
     },
+    enabled: !!user && !!profile && profile.role === 'admin',
+    retry: 3,
+    retryDelay: 1000,
   });
 
   const formatDate = (dateString: string) => {
@@ -76,6 +123,67 @@ const AdminDashboard = () => {
     if (diffDays < 7) return `${diffDays} days ago`;
     return date.toLocaleDateString();
   };
+
+  // Show loading state while auth is loading
+  if (authLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-600">Loading admin dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if user is not admin
+  if (!user || !profile || profile.role !== 'admin') {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-center py-12">
+          <Card className="w-full max-w-md">
+            <CardContent className="p-6 text-center">
+              <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">Access Denied</h3>
+              <p className="text-slate-600">You need admin privileges to access this dashboard.</p>
+              <p className="text-sm text-slate-500 mt-2">Current role: {profile?.role || 'Unknown'}</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Show database errors if they occur
+  if (statsError || projectsError) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-center py-12">
+          <Card className="w-full max-w-md">
+            <CardContent className="p-6 text-center">
+              <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">Database Error</h3>
+              <p className="text-slate-600 mb-4">There was an error loading the dashboard data.</p>
+              <details className="text-left text-sm text-slate-500">
+                <summary className="cursor-pointer mb-2">Error Details</summary>
+                <pre className="whitespace-pre-wrap">
+                  {statsError?.message || projectsError?.message || 'Unknown error'}
+                </pre>
+              </details>
+              <Button 
+                onClick={() => window.location.reload()} 
+                className="mt-4"
+              >
+                Reload Page
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   const stats = [
     { 
@@ -106,6 +214,11 @@ const AdminDashboard = () => {
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Admin Dashboard</h1>
           <p className="text-slate-600 mt-1">Manage your clients and projects</p>
+          {profile && (
+            <p className="text-sm text-slate-500 mt-1">
+              Logged in as: {profile.full_name || user.email} (Admin)
+            </p>
+          )}
         </div>
         <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
           <Plus className="w-4 h-4 mr-2" />
