@@ -142,7 +142,7 @@ const AdminAuth = () => {
         <Card className="w-full max-w-md mx-4 border-slate-200 shadow-2xl">
           <CardContent className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-600">Checking authentication...</p>
+            <p className="text-slate-600">Initializing authentication...</p>
           </CardContent>
         </Card>
       </div>

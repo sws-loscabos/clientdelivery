@@ -28,9 +28,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const fetchProfile = async (userId: string, retryCount = 0): Promise<Profile | null> => {
+  const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
-      console.log(`Fetching profile for user ${userId}, attempt ${retryCount + 1}`);
+      console.log(`Fetching profile for user ${userId}`);
       
       const { data: userProfile, error } = await supabase
         .from('profiles')
@@ -40,14 +40,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('Error fetching profile:', error);
-        
-        // If profile doesn't exist and this is a new signup, wait and retry
-        if (error.code === 'PGRST116' && retryCount < 2) {
-          console.log('Profile not found, retrying in 1 second...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          return fetchProfile(userId, retryCount + 1);
-        }
-        
         return null;
       }
 
@@ -66,98 +58,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const handleAuthStateChange = async (event: string, session: Session | null) => {
-    console.log('Auth state changed:', event, session?.user?.email);
-    
-    setSession(session);
-    setUser(session?.user ?? null);
-    
-    if (session?.user) {
-      // For new signups, wait a bit for the trigger to create the profile
-      if (event === 'SIGNED_UP') {
-        console.log('New signup detected, waiting for profile creation...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-      
-      const userProfile = await fetchProfile(session.user.id);
-      setProfile(userProfile);
-      
-      // Only navigate on successful login/signup, not on initial load
-      if (userProfile && (event === 'SIGNED_IN' || event === 'SIGNED_UP')) {
-        const currentPath = window.location.pathname;
-        
-        // Don't redirect if already on the correct dashboard
-        if (userProfile.role === 'admin' && !currentPath.startsWith('/admin')) {
-          navigate('/admin');
-        } else if (userProfile.role === 'client' && !currentPath.startsWith('/client')) {
-          navigate('/client');
-        }
-      }
-    } else {
-      setProfile(null);
-    }
-    
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    let mounted = true;
-
-    const getInitialSession = async () => {
-      try {
-        console.log('Getting initial session...');
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          console.error('Session error:', sessionError);
-          if (mounted) setLoading(false);
-          return;
-        }
-
-        if (session?.user && mounted) {
-          console.log('Initial session found, user:', session.user.email);
-          setSession(session);
-          setUser(session.user);
-          
-          // Fetch user profile
-          const userProfile = await fetchProfile(session.user.id);
-          if (mounted) {
-            setProfile(userProfile);
-            
-            // Handle initial navigation based on current path and role
-            const currentPath = window.location.pathname;
-            if (userProfile) {
-              // If on auth pages and user is authenticated, redirect to dashboard
-              if (currentPath === '/auth' || currentPath === '/admin/auth' || currentPath === '/') {
-                if (userProfile.role === 'admin') {
-                  navigate('/admin');
-                } else {
-                  navigate('/client');
-                }
-              }
-            }
-          }
-        } else {
-          console.log('No initial session found');
-        }
-      } catch (error) {
-        console.error('Error getting initial session:', error);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    getInitialSession();
-
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthStateChange);
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [navigate]);
-
   const signOut = async () => {
     try {
       console.log('Signing out...');
@@ -173,6 +73,88 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        console.log('Initializing auth...');
+        
+        // Get initial session
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Session error:', error);
+          if (isMounted) {
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (initialSession?.user && isMounted) {
+          console.log('Initial session found:', initialSession.user.email);
+          setSession(initialSession);
+          setUser(initialSession.user);
+          
+          // Fetch profile
+          const userProfile = await fetchProfile(initialSession.user.id);
+          if (isMounted) {
+            setProfile(userProfile);
+          }
+        } else {
+          console.log('No initial session found');
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    // Initialize auth
+    initializeAuth();
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+
+      console.log('Auth state changed:', event, session?.user?.email);
+      
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        // Fetch profile for authenticated user
+        const userProfile = await fetchProfile(session.user.id);
+        if (isMounted) {
+          setProfile(userProfile);
+          
+          // Navigate based on role only for login events
+          if (userProfile && (event === 'SIGNED_IN' || event === 'SIGNED_UP')) {
+            const currentPath = window.location.pathname;
+            
+            if (userProfile.role === 'admin' && !currentPath.startsWith('/admin')) {
+              navigate('/admin');
+            } else if (userProfile.role === 'client' && !currentPath.startsWith('/client')) {
+              navigate('/client');
+            }
+          }
+        }
+      } else {
+        if (isMounted) {
+          setProfile(null);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const value = {
     session,
