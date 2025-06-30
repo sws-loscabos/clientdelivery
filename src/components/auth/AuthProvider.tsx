@@ -76,43 +76,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const initializeAuth = async () => {
       try {
-        console.log('Initializing auth...');
+        console.log('🔄 Starting auth initialization...');
+        console.log('🔗 Supabase URL:', import.meta.env.VITE_SUPABASE_URL ? 'Set' : 'Missing');
+        console.log('🔑 Supabase Key:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Set' : 'Missing');
+        
+        // Test Supabase connection first
+        console.log('🧪 Testing Supabase connection...');
+        const { data: testData, error: testError } = await supabase
+          .from('profiles')
+          .select('count')
+          .limit(1);
+        
+        if (testError) {
+          console.error('❌ Supabase connection test failed:', testError);
+          throw new Error('Database connection failed');
+        }
+        
+        console.log('✅ Supabase connection successful');
         
         // Get initial session
+        console.log('🔍 Getting initial session...');
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Session error:', error);
-          if (isMounted) {
-            setLoading(false);
-          }
-          return;
+          console.error('❌ Session error:', error);
+          throw error;
         }
 
         if (initialSession?.user && isMounted) {
-          console.log('Initial session found:', initialSession.user.email);
+          console.log('✅ Initial session found:', initialSession.user.email);
           setSession(initialSession);
           setUser(initialSession.user);
           
           // Fetch profile
+          console.log('👤 Fetching user profile...');
           const userProfile = await fetchProfile(initialSession.user.id);
           if (isMounted) {
             setProfile(userProfile);
+            console.log('✅ Profile loaded:', userProfile?.role);
           }
         } else {
-          console.log('No initial session found');
+          console.log('ℹ️ No initial session found');
         }
       } catch (error) {
-        console.error('Error initializing auth:', error);
+        console.error('❌ Error initializing auth:', error);
+        // Still set loading to false even on error
       } finally {
         if (isMounted) {
+          console.log('✅ Auth initialization complete');
           setLoading(false);
         }
       }
     };
+
+    // Set a timeout to force loading to false after 10 seconds
+    timeoutId = setTimeout(() => {
+      if (isMounted && loading) {
+        console.warn('⚠️ Auth initialization timeout - forcing loading to false');
+        setLoading(false);
+      }
+    }, 10000);
 
     // Initialize auth
     initializeAuth();
@@ -121,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
 
-      console.log('Auth state changed:', event, session?.user?.email);
+      console.log('🔄 Auth state changed:', event, session?.user?.email);
       
       setSession(session);
       setUser(session?.user ?? null);
@@ -152,6 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       isMounted = false;
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, [navigate]);

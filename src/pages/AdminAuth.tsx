@@ -17,13 +17,26 @@ const AdminAuth = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('AdminAuth - Auth state:', { 
+      user: !!user, 
+      profile: profile?.role, 
+      authLoading,
+      currentPath: window.location.pathname 
+    });
+  }, [user, profile, authLoading]);
+
   // Redirect if already authenticated as admin
   useEffect(() => {
     if (!authLoading && user && profile) {
+      console.log('AdminAuth - User authenticated with role:', profile.role);
       if (profile.role === 'admin') {
+        console.log('AdminAuth - Redirecting to admin dashboard');
         navigate('/admin');
       } else {
         // If user is logged in but not admin, show error and sign out
+        console.log('AdminAuth - User is not admin, signing out');
         toast({
           title: 'Access Denied',
           description: 'You do not have admin privileges. Please contact your administrator.',
@@ -64,7 +77,7 @@ const AdminAuth = () => {
     setLoading(true);
     
     try {
-      console.log('Attempting admin login for:', email);
+      console.log('🔐 Attempting admin login for:', email);
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -72,7 +85,7 @@ const AdminAuth = () => {
       });
 
       if (error) {
-        console.error('Admin login error:', error);
+        console.error('❌ Admin login error:', error);
         toast({
           title: 'Login Failed',
           description: error.message,
@@ -82,7 +95,7 @@ const AdminAuth = () => {
       }
 
       if (data.user) {
-        console.log('Login successful, checking admin role...');
+        console.log('✅ Login successful, checking admin role...');
         
         // Check if user has admin role
         const { data: userProfile, error: profileError } = await supabase
@@ -92,7 +105,7 @@ const AdminAuth = () => {
           .single();
 
         if (profileError) {
-          console.error('Error fetching profile:', profileError);
+          console.error('❌ Error fetching profile:', profileError);
           toast({
             title: 'Access Denied',
             description: 'Unable to verify admin privileges. Please try again.',
@@ -102,10 +115,10 @@ const AdminAuth = () => {
           return;
         }
 
-        console.log('User profile:', userProfile);
+        console.log('👤 User profile:', userProfile);
 
         if (userProfile?.role !== 'admin') {
-          console.log('User is not admin, role:', userProfile?.role);
+          console.log('❌ User is not admin, role:', userProfile?.role);
           toast({
             title: 'Access Denied',
             description: 'You do not have admin privileges. This area is restricted to administrators only.',
@@ -115,7 +128,7 @@ const AdminAuth = () => {
           return;
         }
 
-        console.log('Admin login successful');
+        console.log('✅ Admin login successful');
         toast({
           title: 'Admin Login Successful',
           description: `Welcome back, ${userProfile.full_name || 'Admin'}!`,
@@ -124,7 +137,7 @@ const AdminAuth = () => {
         // AuthProvider will handle navigation to /admin
       }
     } catch (error) {
-      console.error('Unexpected admin login error:', error);
+      console.error('❌ Unexpected admin login error:', error);
       toast({
         title: 'Login Failed',
         description: 'An unexpected error occurred. Please try again.',
@@ -143,6 +156,33 @@ const AdminAuth = () => {
           <CardContent className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className="text-slate-600">Initializing authentication...</p>
+            <p className="text-xs text-slate-500 mt-2">This should only take a moment</p>
+            <div className="mt-4 text-xs text-slate-400">
+              <p>If this takes too long, check the browser console for errors</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show error if user is not admin
+  if (!authLoading && user && profile && profile.role !== 'admin') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-blue-900">
+        <Card className="w-full max-w-md mx-4 border-slate-200 shadow-2xl">
+          <CardContent className="p-6 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">Access Denied</h3>
+            <p className="text-slate-600">You need admin privileges to access this dashboard.</p>
+            <p className="text-sm text-slate-500 mt-2">Current role: {profile?.role || 'Unknown'}</p>
+            <Button 
+              onClick={() => supabase.auth.signOut()} 
+              className="mt-4"
+              variant="outline"
+            >
+              Sign Out
+            </Button>
           </CardContent>
         </Card>
       </div>
