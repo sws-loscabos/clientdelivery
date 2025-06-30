@@ -1,17 +1,24 @@
-
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { User, LogOut } from 'lucide-react';
+import { User, LogOut, Loader2 } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider';
 
 const Navigation = () => {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, loading } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = () => {
     navigate('/auth');
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   return (
@@ -26,7 +33,12 @@ const Navigation = () => {
           </Link>
 
           <div className="flex items-center space-x-4">
-            {!user ? (
+            {loading ? (
+              <div className="flex items-center space-x-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm text-slate-600">Loading...</span>
+              </div>
+            ) : !user ? (
               <Button 
                 onClick={handleLogin}
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
@@ -49,7 +61,7 @@ const Navigation = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={signOut}
+                  onClick={handleSignOut}
                   className="text-slate-600 hover:text-slate-800"
                 >
                   <LogOut className="w-4 h-4 mr-1" />
