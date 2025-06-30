@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -24,13 +23,13 @@ const Index = () => {
             Manage projects, share files, and communicate seamlessly with your clients.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
-            <Link to="/admin">
+            <Link to="/admin/auth">
               <Button size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-8">
                 <Shield className="w-5 h-5 mr-2" />
-                Admin Dashboard
+                Admin Login
               </Button>
             </Link>
-            <Link to="/client">
+            <Link to="/auth">
               <Button size="lg" variant="outline" className="px-8 hover:bg-blue-50">
                 <User className="w-5 h-5 mr-2" />
                 Client Portal
@@ -165,14 +164,14 @@ const Index = () => {
             Experience the power of organized project delivery and enhanced client communication.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/admin">
+            <Link to="/admin/auth">
               <Button size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-8">
-                Try Admin Dashboard
+                Admin Dashboard
               </Button>
             </Link>
-            <Link to="/client">
+            <Link to="/auth">
               <Button size="lg" variant="outline" className="px-8 hover:bg-blue-50">
-                View Client Experience
+                Client Experience
               </Button>
             </Link>
           </div>

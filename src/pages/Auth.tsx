@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from '@/components/auth/AuthProvider';
+import { User, Shield } from 'lucide-react';
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -180,8 +181,13 @@ const Auth = () => {
           
           <TabsContent value="login">
             <CardHeader>
-              <CardTitle>Login</CardTitle>
-              <CardDescription>Enter your credentials to access your account.</CardDescription>
+              <div className="flex justify-center mb-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <CardTitle className="text-center">Client Login</CardTitle>
+              <CardDescription className="text-center">Enter your credentials to access your client portal.</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleLogin} className="space-y-4">
@@ -217,13 +223,30 @@ const Auth = () => {
                   {loading ? 'Signing in...' : 'Sign In'}
                 </Button>
               </form>
+              
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <p className="text-center text-sm text-slate-600">
+                  Are you an admin?{' '}
+                  <button
+                    onClick={() => navigate('/admin/auth')}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Admin Login
+                  </button>
+                </p>
+              </div>
             </CardContent>
           </TabsContent>
           
           <TabsContent value="signup">
             <CardHeader>
-              <CardTitle>Create Account</CardTitle>
-              <CardDescription>Create a new account to access your client portal.</CardDescription>
+              <div className="flex justify-center mb-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <CardTitle className="text-center">Create Client Account</CardTitle>
+              <CardDescription className="text-center">Create a new account to access your client portal.</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSignUp} className="space-y-4">
@@ -272,6 +295,18 @@ const Auth = () => {
                   {loading ? 'Creating Account...' : 'Create Account'}
                 </Button>
               </form>
+              
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <p className="text-center text-sm text-slate-600">
+                  Are you an admin?{' '}
+                  <button
+                    onClick={() => navigate('/admin/auth')}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Admin Login
+                  </button>
+                </p>
+              </div>
             </CardContent>
           </TabsContent>
         </Tabs>
